@@ -8,6 +8,7 @@ import tensorflow as tf
 import tensorboard as tb
 import numpy as np
 import time
+import math
 # import sys
 #
 # sys.path.append(r'/Users/Apple/bbdd/models/tutorials/image/cifar10')
@@ -15,14 +16,14 @@ import cifar10, cifar10_input
 
 bath_size = 128
 max_steps = 3000
-data_dir = '/cifar10_data/cifar-10-batches-bin'
+data_dir = '/tmp/cifar10_data/cifar-10-batches-bin'
 
 # 需要对权重做一个L2的loss正则约束，特征无效时，会被施加很大的惩罚提升模型泛华能力
 # 使用w1对L2的loss控制weights L2的大小
-def variable_with_weights_loss(shape, stddv, wl):
-    var = tf.Variable(tf.truncated_normal(shape, stddv=stddv))
-    if w1 is not None:
-        weights_loss = tf.multiply(tf.nn.l2_loss, wl, name='weight_loss')
+def variable_with_weights_loss(shape, stddev, wl):
+    var = tf.Variable(tf.truncated_normal(shape, stddev=stddev))
+    if wl is not None:
+        weights_loss = tf.multiply(tf.nn.l2_loss(var), wl, name='weight_loss')
         tf.add_to_collection('losses', weights_loss) # 啥用？？收集在一起
     return var
 
@@ -32,10 +33,10 @@ images_train, labels_train = cifar10_input.distorted_inputs(data_dir, bath_size)
 images_test, labels_test = cifar10_input.inputs(True, data_dir, bath_size)
 
 image_holder = tf.placeholder(tf.float32, [bath_size, 24, 24, 3])
-label_holder = tf.placeholder(tf.float32, [bath_size])
+label_holder = tf.placeholder(tf.int32, [bath_size])
 
 
-weight1 = variable_with_weights_loss(shape= [5, 5, 3, 64], stddv= 5e-2, wl=.0) # 初始bias设定为多少合适
+weight1 = variable_with_weights_loss(shape= [5, 5, 3, 64], stddev= 5e-2, wl=.0) # 初始bias设定为多少合适
 kernel1 = tf.nn.conv2d(input=image_holder, filter=weight1, strides=[1, 1, 1, 1],
                        padding='SAME')
 bias1 = tf.Variable(tf.constant(0.0, shape=[64]))
@@ -44,7 +45,7 @@ pool1 = tf.nn.max_pool(value=conv1, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1],
                        padding='SAME')
 norm1 = tf.nn.lrn(input=pool1, depth_radius=4, bias=1.0, alpha=.001/9.0, beta=.75) # 参数设置原因？
 
-weight2 = variable_with_weights_loss(shape=[5, 5, 64, 64], stddv=5e-2, wl=.0)
+weight2 = variable_with_weights_loss(shape=[5, 5, 64, 64], stddev=5e-2, wl=.0)
 kernel2 = tf.nn.conv2d(input=norm1, filter=weight2, strides=[1, 1, 1, 1],
                        padding='SAME')
 bias2 = tf.Variable(tf.constant(.1,shape=[64]))
@@ -56,15 +57,15 @@ pool2 = tf.nn.max_pool(value=norm2, ksize=[1, 2, 2, 1], strides=[1, 3, 3, 1],
 # 需要将数据进行flatten，将样本都变成一维向量
 reshape = tf.reshape(tensor=pool2, shape=[bath_size, -1])
 dim = reshape.get_shape()[1].value
-weight3 = variable_with_weights_loss(shape=[dim, 384], stddv=.04, wl=.004)
+weight3 = variable_with_weights_loss(shape=[dim, 384], stddev=.04, wl=.004)
 bias3 = tf.Variable(tf.constant(.1, shape=[384])) # 384 = 128 bath* 3 dim
 local3 = tf.nn.relu(tf.matmul(reshape, weight3) + bias3) # 因为是全连接层
 
-weight4 = variable_with_weights_loss(shape=[3384, 192], stddv=.04, wl=.004)
+weight4 = variable_with_weights_loss(shape=[384, 192], stddev=.04, wl=.004)
 bias4 = tf.Variable(tf.constant(.1, shape=[192]))
-local4 = tf.nn.relu(features=tf.matmul(local3, weight4) + bias4)
+local4 = tf.nn.relu(tf.matmul(local3, weight4) + bias4 )
 
-weight5 = variable_with_weights_loss(shape=[192, 10], stddv=1/192.0, wl=.0)
+weight5 = variable_with_weights_loss(shape=[192, 10], stddev=1/192.0, wl=.0)
 bias5 = tf.Variable(tf.constant(.0, shape=[10]))
 logits = tf.add(tf.matmul(local4, weight5), bias5)
 
@@ -79,7 +80,7 @@ def loss(logits, labels):
 
 loss = loss(logits, label_holder)
 train_op = tf.train.AdamOptimizer(1e-3).minimize(loss)
-top_k_op = tf.nn.in_top_k(logits, label_holder, 1)
+top_k_op = tf.nn.in_top_k(predictions= logits,targets= label_holder,k= 1)
 
 sess = tf.InteractiveSession()
 tf.global_variables_initializer().run()
@@ -102,3 +103,18 @@ for step in range(max_steps):
 
 
 # 测试集内容
+num_examples = 1000
+num_iter = int(math.ceil(num_examples / bath_size))
+true_count = 0
+total_sample_count = num_iter * bath_size
+step =0
+while step < num_iter:
+    image_batch, label_batch = sess.run(fetches=[images_test, labels_test])
+    predictions = sess.run([top_k_op], feed_dict= {image_holder: image_batch,
+                                                   label_holder: label_batch})
+    true_count += np.sum(predictions)
+    step += 1
+
+
+precision = true_count / total_sample_count
+print('precision @ 1 = %.3f' % precision)
