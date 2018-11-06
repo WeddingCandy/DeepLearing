@@ -4,7 +4,7 @@
     <content url="file://$MODULE_DIR$" />
     <content url="file://$USER_HOME$/bbdd/models/tutorials/image/cifar10" />
     <content url="file://$USER_HOME$/bbdd/models/tutorials/image/cifar10_estimator" />
-    <orderEntry type="inheritedJdk" />
+    <orderEntry type="jdk" jdkName="Python 3.6.4 (F:\softwares\Anaconda3\python.exe)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
   <component name="TestRunnerService">
