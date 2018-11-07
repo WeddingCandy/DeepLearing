@@ -57,3 +57,74 @@ def inference(images):
         conv3 = tf.nn.relu(bias, name=scope)
         parameters += [kernel, biases]
         print_activations(conv3)
+
+    with tf.name_scope('conv4') as scope:
+        kernel = tf.Variable(tf.truncated_normal(shape=[3, 3, 384, 256], dtype=tf.float32,
+                                stddev=1e-1),name='weights')
+        conv = tf.nn.conv2d(input=conv3,filter=kernel,
+                            strides=[1, 1, 1, 1], padding='SAME')
+        biases = tf.Variable(tf.constant(.0, shape=[256], dtype=tf.float32),
+                             trainable=True, name='biases')
+        bias = tf.nn.bias_add(conv, biases)
+        conv4 = tf.nn.relu(bias, name=scope)
+        parameters += [kernel, bias]
+        print_activations(conv4)
+
+    with tf.name_scope('conv5') as scope:
+        kernel = tf.Variable(tf.truncated_normal(shape=[3, 3, 256, 256], dtype=tf.float32,
+                                                 stddev=1e-1), name='weights')
+        conv = tf.nn.conv2d(input=conv4, filter=kernel,
+                            strides=[1, 1, 1, 1], padding='SAME')
+        biases = tf.Variable(tf.constant(.0, shape=[256], dtype=tf.float32),
+                             trainable=True, name='biases')
+        bias = tf.nn.bias_add(conv, biases)
+        conv5 = tf.nn.relu(bias, name=scope)
+        parameters += [kernel, bias]
+        print_activations(conv5)
+
+    pool5 = tf.nn.max_pool(conv5, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1],
+                           padding='VALID', name='pool5')
+    print_activations(pool5)
+
+
+    return pool5, parameters
+
+def time_tensorflow_run(session, target, info_string):
+    num_steps_burn_in = 10
+    total_duration = .0
+    total_duration_squared = .0
+
+    for i in range(num_batches + num_steps_burn_in):
+        start_time = time.time()
+        _ = session.run(target)
+        duration = time.time() - start_time
+        if i>= num_steps_burn_in:
+            if not i%10:
+                print('%s step %d, duration = %.3f' % (datetime.now(),
+                                    i - num_steps_burn_in,duration))
+            total_duration += duration
+            total_duration_squared += math.pow(duration, 2)
+    mn = total_duration / num_batches
+    vr = total_duration_squared / num_batches - math.pow(mn, 2)
+    sd = math.sqrt(vr)
+    print('%s: %s across %d steps, %.3f +/- %.3f sec / batch' %
+                      (datetime.now(), info_string, num_batches, mn, sd))
+
+def run_benchmark():
+    with tf.Graph().as_default():
+        image_size = 224
+        images = tf.Variable(tf.random_normal([batch_size, image_size, image_size, 3],
+                                              dtype=tf.float32, stddev=1e-1))
+        pool5, parameters = inference(images)
+
+        init = tf.global_variables_initializer()
+        sess = tf.Session()
+        sess.run(init)
+
+        time_tensorflow_run(sess, pool5, 'Forward')
+
+        objective = tf.nn.l2_loss(pool5)
+        grad = tf.gradients(objective, parameters)
+        time_tensorflow_run(sess, grad, 'Forward-backward')
+
+run_benchmark()
